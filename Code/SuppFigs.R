@@ -8,6 +8,7 @@
 rm(list=ls(all=TRUE)) #remove everything
 
 library(ggplot2)
+library(broom.mixed)
 library(tidybayes)
 library(tidyverse)
 library(dplyr)
@@ -15,7 +16,6 @@ library(rstan)
 library(rstanarm)
 library(brms)
 library(bayesplot)
-library(bayestestR)
 library(ggdist)
 library(cowplot)
 library(tidyr)
@@ -54,8 +54,11 @@ load(paste0(DataPath,"/FinalData.RData"))
 
 # Table S1 ---------------------------------------------------------------------
 
-(TableS1 <- as.data.frame(describe_posterior(m1, ci = 0.95, test="none")) %>% 
-   mutate(Parameter = gsub("b_", "", Parameter),
+(TableS1 <- as.data.frame(tidy(m1,
+                               effects="fixed", 
+                               robust = TRUE,
+                               conf.level=.95)) %>% 
+   mutate(Parameter = gsub("b_", "", term),
           Class = gsub("Class", "", Parameter),
           Class =gsub(":", "", Class),
           Class =gsub("System", "", Class),
@@ -76,8 +79,12 @@ load(paste0(DataPath,"/FinalData.RData"))
           System = gsub("D", "/", System), 
           System =gsub("Class", "", System),
           System =gsub(":", "", System),
-          System = gsub('[[:digit:]]+', '', System))  %>%
-   select(Class, System, Median, CI_low, CI_high, Rhat) %>% 
+          System = gsub('[[:digit:]]+', '', System), 
+          Rhat=summary(m1)$fixed$Rhat)  %>%
+   rename(Median = estimate, 
+          CI_low=conf.low, 
+          CI_high=conf.high) %>% 
+   dplyr::select(Class, System, Median, CI_low, CI_high, Rhat) %>% 
    naniar::replace_with_na_all(condition= ~.x == "") %>% 
    drop_na())
 
@@ -121,13 +128,20 @@ ggsave("Figure S5.pdf", figs5,
 
 # Table S2 ---------------------------------------------------------------------
 
-(TableS2 <- as.data.frame(describe_posterior(mle, ci = 0.95, test="none")) %>% 
-   mutate(Parameter = gsub("b_", "", Parameter),
-          Parameter = gsub("length", "Length of the time series", Parameter))  %>%
+(TableS2 <- as.data.frame(tidy(mle,
+                               effects="fixed", 
+                               robust = TRUE,
+                               conf.level=.95))  %>% 
+   mutate(Parameter = gsub("b_", "", term),
+          Parameter = gsub("length", "Length of the time series", Parameter),
+          Rhat=summary(mle)$fixed$Rhat)  %>%
+   rename(Median = estimate, 
+          CI_low=conf.low, 
+          CI_high=conf.high) %>% 
    naniar::replace_with_na_all(condition= ~.x == "") %>%
    drop_na() %>% 
-   select(Parameter, Median, CI_low, CI_high, Rhat)) 
-
+   dplyr::select(Parameter, Median, CI_low, CI_high, Rhat))
+   
 # Save it 
 
 setwd(ResultPath)
@@ -161,14 +175,36 @@ write.csv2(TableS2, "Table S2.csv")
 ggsave("Figure S6.pdf", figs6,
        width = 6, height = 4, path = ResultPath)
 
+# Figure S7: Hist years --------------------------------------------------------
+
+(figs7 <- pops_data %>% 
+   distinct(ID, .keep_all = T) %>% 
+   group_by(decade) %>% 
+   summarise(n=n()) %>% 
+   mutate(prop=n/sum(n)) %>% 
+   ggplot(aes(x=reorder(decade, prop), y=prop))+
+   geom_bar(stat="identity", fill="grey90", colour="black")+
+   labs(x="Decade", y="Proportion")+
+   scale_y_continuous(labels = scales::percent_format(accuracy = 1)))
+
+ggsave("Figure S7.pdf", figs7,
+       width = 6, height = 4, path = ResultPath)
+
 # Table S3 ---------------------------------------------------------------------
 
-(TableS3 <- as.data.frame(describe_posterior(mdec, ci = 0.95, test="none")) %>% 
-   mutate(Parameter = gsub("b_", "", Parameter),
-          Parameter = gsub("decade", "", Parameter))  %>%
+(TableS3 <- as.data.frame(tidy(mdec,
+                               effects="fixed", 
+                               robust = TRUE,
+                               conf.level=.95))  %>% 
+   mutate(Parameter = gsub("b_", "", term),
+          Parameter = gsub("decade", "", Parameter),
+          Rhat=summary(mdec)$fixed$Rhat)  %>%
+   rename(Median = estimate, 
+          CI_low=conf.low, 
+          CI_high=conf.high) %>% 
    naniar::replace_with_na_all(condition= ~.x == "") %>%
    drop_na() %>% 
-   select(Parameter, Median, CI_low, CI_high, Rhat) %>% 
+   dplyr::select(Parameter, Median, CI_low, CI_high, Rhat) %>% 
    arrange(desc(Parameter))) 
 
 # Save it 
@@ -176,13 +212,13 @@ ggsave("Figure S6.pdf", figs6,
 setwd(ResultPath)
 write.csv2(TableS3, "Table S3.csv")
 
-# Figure S7: Protection --------------------------------------------------------
+# Figure S8: Protection --------------------------------------------------------
 # Sample size
 
 sample_size <- pops_data %>% 
-  drop_na(Protected) %>%
-  mutate(Protected = gsub("Yes", "Protected", Protected),
-         Protected =gsub("No", "Unprotected", Protected)) %>% 
+  mutate(Protected = ifelse(is.na(Protected), "Unknown", Protected),
+         Protected =gsub("No", "Unprotected", Protected),
+         Protected =gsub("Yes", "Protected", Protected)) %>% 
   group_by(Protected) %>% 
   summarise(median=median(mu),
             n=n(),
@@ -191,8 +227,9 @@ sample_size <- pops_data %>%
 med <- mp %>%
   gather_draws(`b_.*`, regex = TRUE) %>%
   mutate(Protected = gsub("b_", "", .variable),
-         Protected = gsub("Yes", "", Protected),
-         Protected =gsub("ProtectedNo", "Unprotected", Protected))  %>%
+         Protected = gsub("ProtectedProtected", "Protected", Protected),
+         Protected =gsub("ProtectedUnknown", "Unknown", Protected),
+         Protected =gsub("ProtectedUnprotected", "Unprotected", Protected))  %>%
   group_by(Protected) %>% 
   summarise(med=quantile(.value, probs = 0.9)) %>% 
   naniar::replace_with_na_all(condition= ~.x == "") %>% 
@@ -206,19 +243,21 @@ sample_size<- sample_size %>%
 dat <- mp %>%
   gather_draws(`b_.*`, regex = TRUE) %>%
   mutate(Protected = gsub("b_", "", .variable),
-         Protected = gsub("Yes", "", Protected),
-         Protected =gsub("ProtectedNo", "Unprotected", Protected))  %>%
+         Protected = gsub("ProtectedProtected", "Protected", Protected),
+         Protected =gsub("ProtectedUnknown", "Unknown", Protected),
+         Protected =gsub("ProtectedUnprotected", "Unprotected", Protected))  %>%
   naniar::replace_with_na_all(condition= ~.x == "") %>% 
   drop_na()
 
 # Plot
 
-(figs7 <- mp %>%
+(figs8 <- mp %>%
     gather_draws(`b_.*`, regex = TRUE) %>%
     median_qi(.value, .width = c(.95, .8, .5)) %>% 
     mutate(Protected = gsub("b_", "", .variable),
-           Protected = gsub("Yes", "", Protected),
-           Protected =gsub("ProtectedNo", "Unprotected", Protected))  %>%
+           Protected = gsub("ProtectedProtected", "Protected", Protected),
+           Protected =gsub("ProtectedUnknown", "Unknown", Protected),
+           Protected =gsub("ProtectedUnprotected", "Unprotected", Protected))  %>%
     naniar::replace_with_na_all(condition= ~.x == "") %>% 
     drop_na() %>% 
     ggplot(aes(y = Protected, x = .value)) +
@@ -230,7 +269,7 @@ dat <- mp %>%
     geom_text(data = sample_size, aes(x=med, y=Protected, 
                                       label = paste0("n=", n)),
               vjust   = -1)+
-    scale_color_manual("", values = c("#A1D6E2","#336B87")) +
+    scale_color_manual("", values = c("#A1D6E2","#336B87", "#334F5D")) +
     scale_x_continuous(
       labels = scales::number_format(accuracy = 0.01))+
     xlim(-0.025,0.025)+
@@ -239,19 +278,26 @@ dat <- mp %>%
 
 # Save the figure
 
-ggsave("Figure S7.pdf", figs7,
+ggsave("Figure S8.pdf", figs8,
        width = 6, height = 4, path = ResultPath)
 
 # Table S4 ----------------------------------------------------------------------
 
-(TableS4 <- as.data.frame(describe_posterior(mp, ci = 0.95, test="none")) %>% 
-   mutate(Parameter = gsub("b_", "", Parameter),
-          Parameter = gsub("Yes", "", Parameter),
-          Parameter =gsub("ProtectedNo", 
-                          "Unprotected", Parameter))  %>%
+(TableS4 <- as.data.frame(tidy(mp,
+                               effects="fixed", 
+                               robust = TRUE,
+                               conf.level=.95))  %>%
+   mutate(Parameter = gsub("b_", "", term),
+          Parameter = gsub("ProtectedProtected", "Protected", Parameter),
+          Parameter =gsub("ProtectedUnknown", "Unknown", Parameter),
+          Parameter=gsub("ProtectedUnprotected", "Unprotected", Parameter),
+          Rhat=summary(mp)$fixed$Rhat)  %>%
+   rename(Median = estimate, 
+          CI_low=conf.low, 
+          CI_high=conf.high) %>% 
    naniar::replace_with_na_all(condition= ~.x == "") %>%
    drop_na() %>% 
-   select(Parameter, Median, CI_low, CI_high, Rhat)) 
+   dplyr::select(Parameter, Median, CI_low, CI_high, Rhat)) 
 
 # Save it 
 
@@ -260,22 +306,37 @@ write.csv2(TableS4, "Table S4.csv")
 
 # Table S5 ---------------------------------------------------------------------
 
-(TableS5 <- as.data.frame(describe_posterior(md, ci = 0.95, test="none")) %>%
-   mutate(Model="Database") %>% 
-   rbind(as.data.frame(describe_posterior(mc2, ci = 0.95, test="none")) %>% 
-           mutate(Model="IUCN")) %>% 
-   rbind(as.data.frame(describe_posterior(ml, ci = 0.95, test="none")) %>% 
-           mutate(Model="Data source")) %>% 
-   mutate(Parameter = gsub("b_threat", "", Parameter),
+(TableS5 <- as.data.frame(tidy(md,
+                               effects="fixed", 
+                               robust = TRUE,
+                               conf.level=.95)) %>%
+   mutate(Model="Database",
+          Rhat=summary(md)$fixed$Rhat) %>% 
+   rbind(as.data.frame(tidy(mc2,
+                            effects="fixed", 
+                            robust = TRUE,
+                            conf.level=.95)) %>% 
+           mutate(Model="IUCN",
+                  Rhat=summary(mc2)$fixed$Rhat)) %>% 
+   rbind(as.data.frame(tidy(ml,
+                            effects="fixed", 
+                            robust = TRUE,
+                            conf.level=.95)) %>% 
+           mutate(Model="Data source",
+                  Rhat=summary(ml)$fixed$Rhat)) %>% 
+   mutate(Parameter = gsub("b_threat", "", term),
           Parameter = gsub("b_", "", Parameter),
           Parameter = gsub("database", "", Parameter),
           Parameter = gsub("Data_source_type", "", Parameter),
           Parameter = gsub("IV", "IbeV", Parameter),
           Parameter = gsub("M", "-", Parameter),
           Parameter = gsub("Grey", "Grey ", Parameter))  %>%
-   select(Model, Parameter, Median, CI_low, CI_high, Rhat) %>% 
-   naniar::replace_with_na_all(condition= ~.x == "") %>% 
-   drop_na())
+   rename(Median = estimate, 
+          CI_low=conf.low, 
+          CI_high=conf.high) %>% 
+   naniar::replace_with_na_all(condition= ~.x == "") %>%
+   drop_na() %>% 
+   dplyr::select(Model, Parameter, Median, CI_low, CI_high, Rhat)) 
 
 # Save it 
 
@@ -284,16 +345,23 @@ write.csv2(TableS5, "Table S5.csv")
 
 # Table S6 ---------------------------------------------------------------------
 
-(TableS6 <- as.data.frame(describe_posterior(mdi, ci = 0.95, test="none")) %>%  
-   mutate(Parameter = gsub("b_", "", Parameter),
+(TableS6 <- as.data.frame(tidy(mdi,
+                               effects="fixed", 
+                               robust = TRUE,
+                               conf.level=.95)) %>%  
+   mutate(Parameter = gsub("b_", "", term),
           Parameter = gsub("database", "", Parameter),
           Parameter = gsub("Data_source_type", "", Parameter),
           Parameter = gsub("IV", "IbeV", Parameter),
           Parameter = gsub("System", "", Parameter),
           Parameter = gsub("MarineD", "Marine/", Parameter),
           Parameter = gsub("FreshwaterD", "Freshwater/", Parameter),
-          Parameter = gsub("Class", "", Parameter))  %>%
-   select(Parameter, Median, CI_low, CI_high, Rhat) %>% 
+          Parameter = gsub("Class", "", Parameter),
+          Rhat=summary(mdi)$fixed$Rhat)  %>%
+   rename(Median = estimate, 
+          CI_low=conf.low, 
+          CI_high=conf.high) %>%  
+   dplyr::select(Parameter, Median, CI_low, CI_high, Rhat) %>% 
    naniar::replace_with_na_all(condition= ~.x == "") %>% 
    drop_na())
 
