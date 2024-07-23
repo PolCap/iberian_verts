@@ -42,6 +42,13 @@ warmup = 0.1*iter
 priors <- c(prior(normal(0, 1), class = b),
             prior(exponential(1), class = sigma))
 
+# Modify the dataset to include NA in the models of protection 
+
+pops_data <- pops_data %>%
+  mutate(Protected = ifelse(is.na(Protected), "Unknown", Protected),
+         Protected =gsub("No", "Unprotected", Protected),
+         Protected =gsub("Yes", "Protected", Protected)) 
+
 # Effects on mean population trend ---------------------------------------------
 
 # System & Class
@@ -60,7 +67,7 @@ mp <- brm(mu | se(sigma, sigma = TRUE)  ~ Protected-1 + (1|Species),
           control = list(adapt_delta = .975, max_treedepth = 12),
           data = pops_data, 
           family = gaussian, prior = priors,
-          cores = 10)
+          cores = 4)
 
 mipd <- brm(mu | se(sigma, sigma = TRUE)  ~ Protected*Data_source_type-1 + (1|Species), 
           iter = iter, thin = thin, warmup = warmup,
@@ -144,7 +151,7 @@ mle <- brm(mu | se(sigma, sigma = TRUE)  ~ length + (1|Species),
 
 # Decade
 
-mdec <- brm(mu | se(sigma, sigma = TRUE)  ~ decade + (1|Species), 
+mdec <- brm(mu | se(sigma, sigma = TRUE)  ~ -1 + decade + (1|Species), 
            iter = iter, thin = thin, warmup = warmup,
            control = list(adapt_delta = .975, max_treedepth = 12),
            data = pops_data, 
