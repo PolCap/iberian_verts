@@ -29,19 +29,19 @@ library(ggradar)
 # Set default ggplot theme
 
 theme_set(theme_minimal()+
-            theme(axis.title.x = element_text(size=14,
+            theme(axis.title.x = element_text(size=16,
                                               margin = margin(t = 10, r = 0, b = 0, l = 0)), 
-                  axis.title.y = element_text(size=14,
+                  axis.title.y = element_text(size=16,
                                               margin = margin(t = 0, r = 10, b = 0, l = 0)),
                   axis.line.x = element_line(color="black", linewidth = 0.5),
                   axis.line.y = element_line(color="black", linewidth = 0.5),
                   panel.grid.major = element_blank(), 
                   panel.grid.minor = element_blank(),
-                  axis.text.x = element_text(color="black", size = 12),
-                  axis.text.y = element_text(color="black", size = 12),
-                  strip.text.x = element_text(size = 12),
+                  axis.text.x = element_text(color="black", size = 14),
+                  axis.text.y = element_text(color="black", size = 14),
+                  strip.text.x = element_text(size = 14),
                   axis.ticks = element_line(color="black"),
-                  plot.title = element_text(hjust = 0.5)))
+                  plot.title = element_text(hjust = 0.5, size=16)))
 
 # Set working directory
 
@@ -128,8 +128,8 @@ pops_data %>%
               xmax=4, xmin=3, 
               fill=database)) +
    geom_rect() +
-   scale_color_manual("", values = datab_pal ) +
-   scale_fill_manual("", values =  datab_pal ) +
+   scale_color_manual("", values = database_pal ) +
+   scale_fill_manual("", values =  database_pal ) +
    coord_polar(theta="y", clip = "off") +
    xlim(c(1, 4)) +
    theme_void() +
@@ -140,10 +140,6 @@ pops_data %>%
          plot.margin = unit(c(0,0,0,0), units = "cm")))
 
 ## Taxon ------------------------------------------------------------------
-
-# Set database palette
-
-database_pal <- c("#9A6576","#659A89")
 
 # Reshape the data so it fits into the format for the spider plot
 
@@ -169,7 +165,8 @@ database_pal <- c("#9A6576","#659A89")
 
 (gc <- pops_data %>% 
    distinct(ID, .keep_all=T) %>% 
-   mutate(System, fct_relevel(System, "Marine", "Marine/Freshwater", 
+   mutate(System = factor(System),
+          System = fct_relevel(System, "Marine", "Marine/Freshwater", 
                               "Freshwater", "Freshwater/Terrestrial",
                               "Terrestrial", "Marine/Terrestrial",
                               "Marine/Freshwater/Terrestrial")) %>% 
@@ -201,7 +198,8 @@ database_pal <- c("#9A6576","#659A89")
    scale_fill_manual("", values = database_pal) +
    labs(x="Data source", y="")+ 
    scale_y_continuous(labels = scales::percent,
-                      limits = c(0,1))+
+                      limits = c(0,1),
+                      expand = c(0,0))+
    theme(legend.position = "none",
          plot.margin = unit(c(0,0,0,0), units = "cm")))
 
@@ -220,7 +218,8 @@ database_pal <- c("#9A6576","#659A89")
    scale_fill_manual("", values = database_pal) +
    labs(x="Conservation status", y="")+ 
    scale_y_continuous(labels = scales::percent,
-                      limits = c(0,1))+
+                      limits = c(0,1),
+                      expand = c(0,0))+
    theme(legend.position = "none",
          plot.margin = unit(c(0,0,0,0), units = "cm")))
 
@@ -321,7 +320,7 @@ world <- map_data("world") #, region = c("spain", "portugal"))
                aes(x = as.numeric(Longitude), 
                    y = as.numeric(Latitude), 
                    fill=mu), 
-               alpha= 0.8, shape=21, size=3)+
+               alpha= 0.8, shape=21, size=2)+
     scale_fill_gradient2(expression(paste("Population trend (", mu, ")")),
                          midpoint = 0, 
                          low = "#c1666b", 
@@ -334,7 +333,7 @@ world <- map_data("world") #, region = c("spain", "portugal"))
                                   0.10, 0.2, 0.30),
                          limits=c(-0.3, 0.3))+
     scale_y_continuous(limits = c(35, 45))+
-    scale_x_continuous(limits = c(-10,8)) + 
+    scale_x_continuous(limits = c(-10,8)) +
     # facet_wrap(~Class)+
     theme_map()+
     theme(legend.position = c(0.6, 0.1),
@@ -524,7 +523,7 @@ dat <- m1 %>%
     scale_x_continuous(
       labels = scales::number_format(accuracy = 0.01))+
     xlim(-0.12,0.12)+
-    labs(x="Posterior estimate", y = "Class") + 
+    labs(x="Posterior estimate", y = "Taxonomic group") + 
     theme(legend.position = "none"))
 
 # Save the figure
@@ -586,7 +585,7 @@ dat <- md %>%
     geom_text(data = sample_size, aes(x=med, y=database, 
                                       label = paste0("n=", n)),
               vjust   = -1)+
-    scale_color_manual("", values = datab_pal) +
+    scale_color_manual("", values = database_pal) +
     scale_x_continuous(
       labels = scales::number_format(accuracy = 0.01))+
     xlim(-0.04,0.04)+
@@ -644,7 +643,7 @@ sample_size<- sample_size %>%
     scale_x_continuous(
       labels = scales::number_format(accuracy = 0.01))+
     xlim(-0.1,0.1)+
-    labs(x="Posterior estimate", y = "IUCN category") + 
+    labs(x="Posterior estimate", y = "Conservation status") + 
     theme(legend.position = "none"))
 
 ## Panel c: Source -------------------------------------------------------------
@@ -952,14 +951,16 @@ dat <- mdi %>%
     scale_color_manual("", values = database_pal) +
     scale_y_continuous(
       labels = scales::number_format(accuracy = 0.01))+
-    labs(x="Class", y = "Posterior estimate") + 
-    theme(legend.position = "none",
+    labs(x="Taxonomic group", y = "Posterior estimate") + 
+    theme( legend.position = c(.6,.1),
+           legend.text = element_text(size=14),
+           legend.direction = "horizontal",
           panel.spacing.x = unit(8, "mm"),
           axis.text.x = element_text(angle = 25, hjust = 1),
-          plot.margin = unit(c(1,1,1,1), "cm")))
+          plot.margin = unit(c(.5,.5,.5,.5), "cm")))
 
 # Save the plot
 
 ggsave(fig5,
        filename = "Figure 5.pdf",
-       path = ResultPath, height = 10, width = 14)
+       path = ResultPath, height = 8, width = 12)
